@@ -6,6 +6,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.scrypt import Scrypt
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from flask_login import login_required
 
 
 quantum_key_dist_api_bp = Blueprint("quantum_key_dist_api", __name__)
@@ -24,6 +25,9 @@ def generate_symmetric_key():
 
 @quantum_key_dist_api_bp.route("/quantum_key_dist_api/get_key", methods=["GET"])
 def get_key():
+    """
+    everytime if this route is called a new quantum key is generated
+    """
     try:
         key, salt = generate_symmetric_key()
         encoded_key = base64.b64encode(key).decode() #base 64 encode for JSON transmission
