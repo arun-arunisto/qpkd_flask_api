@@ -1,9 +1,13 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session
 import requests
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 import os
 import base64
+from flask_login import login_required, current_user
+from flask_socketio import emit
+from src.authentication_app.models import User
+from src.authentication_app.views import auth_status
 
 communication_app_bp = Blueprint("communication_app", __name__)
 
@@ -27,8 +31,9 @@ def encrypt_data(data, key):
 
     return {
         "iv":base64.b64encode(iv).decode(),
-        "ciphertext":base64.b64encode(encrypted_data).decode(),
-        "tag":base64.b64encode(encryptor.tag).decode()
+        "cipher_text":base64.b64encode(encrypted_data).decode(),
+        "tag":base64.b64encode(encryptor.tag).decode(),
+        "quantum_key":base64.b64encode(key).decode()
     }
 
 #AES-GCM decryption
@@ -42,9 +47,14 @@ def decrypt_data(encrypted_data, key, iv, tag):
     return decrypted_data.decode()
 
 #Route to initialize communication and fetch a quantum key
-@communication_app_bp.route("/api/communication/initialize", methods=["POST"])
+@communication_app_bp.route("/api/communication/initialize", methods=["GET"])
 def initialize():
+    """
+    everytime if this route is called a new quantum key is generated
+    """
     try:
+        if not auth_status.get("user_public_id"):
+            return jsonify({"status":"Unauthorized"}), 401
         quantum_key = get_quantum_key()
         return jsonify({"status":"Initailized", "quantum_key":base64.b64encode(quantum_key).decode()})
     except Exception as e:
@@ -53,7 +63,14 @@ def initialize():
 #endpoint to send encrypted_data
 @communication_app_bp.route("/api/communication/send_data", methods=["POST"])
 def send_data():
+    """
+    this route is for sending encrypted data
+    post request with json data
+    Keys: data, quantum_key
+    """
     try:
+        if not auth_status.get("user_public_id"):
+            return jsonify({"status":"Unauthorized"}), 401
         data = request.json.get("data")
         quantum_key = base64.b64decode(request.json.get("quantum_key")) #decode the base64 key
         #encrypting the data
@@ -66,11 +83,18 @@ def send_data():
 #endpoint to receive encrypted data and decrypt it
 @communication_app_bp.route("/api/communication/receive_data", methods=["POST"])
 def receive_data():
+    """
+    After sending the data the send_data route returns the 'iv', 'tag', and 'ciphertext'
+    for decryting the data you need to call this route and pass the 'iv', 'tag', 'cipher_text' and 'quantum_key'
+    """
     try:
-        encrypted_data = request.json.get("cipher_text")
-        iv = request.json.get("iv")
-        tag = request.json.get("tag")
-        quantum_key = base64.b64decode(request.json.get("quantum_key")) # decode the base64 key
+        if not auth_status.get("user_public_id"):
+            return jsonify({"status":"Unauthorized"}), 401
+        data = request.json.get("datas")
+        encrypted_data = data.get("cipher_text")
+        iv = data.get("iv")
+        tag = data.get("tag")
+        quantum_key = base64.b64decode(data.get("quantum_key")) # decode the base64 key
         #decrypt the data
         decrypted_data = decrypt_data(encrypted_data, quantum_key, iv, tag)
 
